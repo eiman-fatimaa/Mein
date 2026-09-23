@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from middleware.auth import require_auth
 from services import db_services
 from services.gemini_services import analyse_outfit, get_suggestions
 
@@ -8,12 +9,10 @@ router = APIRouter(tags=["outfits"])
 
 
 class UploadUrlRequest(BaseModel):
-    user_id: str
     filename: str
 
 
 class AnalyseRequest(BaseModel):
-    user_id: str
     image_url: str
 
 
@@ -24,8 +23,8 @@ class SuggestionsRequest(BaseModel):
 
 
 @router.post("/outfits/upload-url")
-def get_upload_url(request: UploadUrlRequest):
-    path = db_services.create_upload_path(request.user_id, request.filename)
+def get_upload_url(request: UploadUrlRequest, current_user=Depends(require_auth)):
+    path = db_services.create_upload_path(current_user.id, request.filename)
     signed = db_services.supabase.storage.from_("outfits").create_signed_upload_url(path)
 
     return {
@@ -35,7 +34,7 @@ def get_upload_url(request: UploadUrlRequest):
 
 
 @router.post("/analyse-outfit")
-async def analyse_outfit_route(request: AnalyseRequest):
+async def analyse_outfit_route(request: AnalyseRequest, current_user=Depends(require_auth)):
     try:
         result = await analyse_outfit(request.image_url)
     except ValueError as e:
@@ -43,16 +42,20 @@ async def analyse_outfit_route(request: AnalyseRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    outfit_id = db_services.save_outfit(request.user_id, request.image_url)
+    outfit_id = db_services.save_outfit(current_user.id, request.image_url)
     analysis_id = db_services.save_analysis(outfit_id, result["pieces"], result["vibes"])
 
     return {"analysis_id": analysis_id, **result}
 
 
 @router.post("/get-suggestions")
-async def get_suggestions_route(request: SuggestionsRequest):
+async def get_suggestions_route(request: SuggestionsRequest, current_user=Depends(require_auth)):
     analysis = db_services.get_analysis(request.analysis_id)
     if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    outfit = db_services.get_outfit(analysis["outfit_id"])
+    if outfit is None or outfit["user_id"] != current_user.id:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
     vibe = next(
@@ -79,5 +82,5 @@ async def get_suggestions_route(request: SuggestionsRequest):
 
 
 @router.get("/outfits/history")
-def get_history(user_id: str):
-    return {"outfits": db_services.get_outfit_history(user_id)}
+def get_history(current_user=Depends(require_auth)):
+    return {"outfits": db_services.get_outfit_history(current_user.id)}

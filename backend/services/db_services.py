@@ -43,6 +43,11 @@ def get_analysis(analysis_id: str) -> dict:
     return result.data
 
 
+def get_outfit(outfit_id: str) -> dict:
+    result = supabase.table("outfits").select("*").eq("id", outfit_id).single().execute()
+    return result.data
+
+
 def save_suggestion(analysis_id: str, selected_vibe: str, suggestions: dict) -> str:
     result = supabase.table("suggestions").insert({
         "analysis_id": analysis_id,
