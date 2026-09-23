@@ -1,1 +1,8 @@
-
+fastapi
+uvicorn[standard]
+python-dotenv
+google-genai
+httpx
+pydantic
+supabase
+python-multipart
